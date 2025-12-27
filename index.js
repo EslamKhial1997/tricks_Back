@@ -63,6 +63,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "exp://192.168.1.5",
   "http://192.168.1.5",
+  "https://tricks.dengatech.com",
 ];
 app.use(
   cors({
@@ -212,7 +213,7 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     console.log(`❌ المستخدم ${socket.user.userId} غادر`);
   });
-});
+}); 
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
