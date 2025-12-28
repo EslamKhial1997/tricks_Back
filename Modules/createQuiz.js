@@ -64,7 +64,7 @@ quizSchema.post("findOneAndDelete", async function (doc, next) {
 });
 
 quizSchema.pre(/^find/, function (next) {
-  this.populate([{ path: "teacher", select: "name" }]);
+  this.populate([{ path: "teacher", select: "name" }, { path: "lecture" }]);
   next();
 });
 

@@ -76,7 +76,11 @@ exports.getQuiz = expressAsyncHandler(async (req, res, next) => {
           path: "questions",
           select: { correctAnswer: 0, correctText: 0 },
         }
-      : "questions"
+      : "questions",
+    {
+      path: "lecture",
+      select: "name",
+    }
   );
 
   const getDocById = await query;
