@@ -32,7 +32,7 @@ const quizSchema = new mongoose.Schema(
 
     active: {
       type: Boolean,
-      default: false,
+      default: false, 
     },
   },
   { timestamps: true }

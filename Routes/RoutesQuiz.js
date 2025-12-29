@@ -23,7 +23,12 @@ Routes.route("/quiz/")
   .post(allowedTo("teacher", "admin"), createMiddleware, createQuiz)
   .get(QuizMiddleWare, getQuizs);
 
-Routes.get("/quiz/myquiz", allowedTo("teacher", "admin"), getMyQuiz);
+Routes.get(
+  "/quiz/myquiz",
+  allowedTo("teacher", "admin"),
+  createMiddleware,
+  getMyQuiz
+);
 
 Routes.route("/quiz/:id")
   .get(protect,QuizMiddleWare, getQuiz)

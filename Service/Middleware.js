@@ -117,6 +117,9 @@ exports.QuestionMiddleWare = expressAsyncHandler(async (req, res, next) => {
 });
 exports.QuizMiddleWare = expressAsyncHandler(async (req, res, next) => {
   try {
+    if (!req.params.id) {
+      return next();
+    }
     const quiz = await createQuizModel.findOne({ _id: req.params.id });
     if (!quiz) {
       return res.status(403).json({ msg: "الاختبار غير موجود" });

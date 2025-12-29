@@ -69,8 +69,8 @@ createLectures.pre(/^find/, function (next) {
       path: "section",
       select: "name image",
     },
+    { path: "section", select: "name image" },
     { path: "teacher", select: "name" },
-    { path: "media.quizId" },
   ]);
 
   next();

@@ -5,8 +5,8 @@ const questionSchema = new mongoose.Schema(
     text: String,
     type: {
       type: String,
-      enum: ["choose", "article", "correct", "truefalse"],
-      default: "choose",
+      enum: ["choice", "article", "correct", "truefalse"],
+      default: "choice",
     },
     quiz: {
       type: mongoose.Schema.ObjectId,

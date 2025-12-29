@@ -22,15 +22,14 @@ exports.createQuiz = expressAsyncHandler(async (req, res) => {
   res.status(201).json({ data: createDoc });
 });
 exports.getMyQuiz = expressAsyncHandler(async (req, res) => {
-  let fillter = { teacher: req.user._id };
-
+  let fillter = { teacher: req.teacher || req.user._id };
+  
   const countDocs = await createQuizModel.countDocuments(fillter);
   const ApiFeatures = new FeatureApi(createQuizModel.find(fillter), req.query)
-    .Fillter(createQuizModel)
-    .Sort()
-    .Fields()
-    .Search()
-    .Paginate(countDocs);
+  .Sort()
+  .Fields()
+  .Search()
+  .Paginate(countDocs);
   const { MongooseQueryApi, PaginateResult } = ApiFeatures;
   const getDoc = await MongooseQueryApi;
   res
@@ -76,11 +75,7 @@ exports.getQuiz = expressAsyncHandler(async (req, res, next) => {
           path: "questions",
           select: { correctAnswer: 0, correctText: 0 },
         }
-      : "questions",
-    {
-      path: "lecture",
-      select: "name",
-    }
+      : "questions"
   );
 
   const getDocById = await query;
