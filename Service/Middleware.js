@@ -26,14 +26,16 @@ exports.updateMiddleware = (Model) =>
     if (!doc) {
       return res.status(404).json({ msg: "الوثيقة غير موجودة" });
     }
+    const docTeacherId = doc.teacher?._id || doc.teacher;
+
     if (req.user.role === "admin") {
-      if (req.user.teacher.toString() !== doc.teacher._id.toString()) {
+      if (!docTeacherId || req.user.teacher.toString() !== docTeacherId.toString()) {
         return res.status(403).json({ msg: "ليس لديك صلاحية وصول" });
       }
     } else if (req.user.role === "teacher") {
-      console.log(req.user._id.toString(), doc.teacher._id.toString());
-
-      if (req.user._id.toString() !== doc.teacher._id.toString()) {
+      // If the document has a teacher assigned, it must match the requesting teacher
+      // If it doesn't (like many students), we allow the teacher to proceed if they have permission
+      if (docTeacherId && req.user._id.toString() !== docTeacherId.toString()) {
         return res.status(403).json({ msg: "ليس لديك صلاحية وصول" });
       }
     }

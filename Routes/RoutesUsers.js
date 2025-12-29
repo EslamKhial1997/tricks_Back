@@ -103,7 +103,6 @@ Routes.route("/users/:id")
     uploadImage,
     updateOneUserValidator,
     resizeImageAuth("admin"),
-    updateOneUserValidator,
-    updateUser
+    updateUser(createUsersModel, "admin")
   );
 module.exports = Routes;

@@ -5,7 +5,7 @@ const questionSchema = new mongoose.Schema(
     text: String,
     type: {
       type: String,
-      enum: ["choose", "article", "correct"],
+      enum: ["choose", "article", "correct", "truefalse"],
       default: "choose",
     },
     quiz: {
