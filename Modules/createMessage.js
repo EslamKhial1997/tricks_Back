@@ -2,7 +2,11 @@ const mongoose = require("mongoose");
 
 const createMessage = new mongoose.Schema(
   {
-    groupId: String,
+    groupId: {
+      type: mongoose.Schema.ObjectId,
+      ref: "Group",
+      required: [true, "معرف الجروب مطلوب"],
+    },
     senderId: {
       type: mongoose.Schema.ObjectId,
       ref: "Users",
@@ -16,10 +20,10 @@ const createMessage = new mongoose.Schema(
 createMessage.pre(/^find/, function (next) {
   this.populate([
     {
-      path: "group",
+      path: "groupId",
       select: "name",
     },
-    { path: "user", select: "name" },
+    { path: "senderId", select: "name" },
   ]);
   next();
 });

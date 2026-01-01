@@ -21,9 +21,34 @@ const createGroup = new mongoose.Schema(
       {
         type: mongoose.Schema.ObjectId,
         ref: "Users",
-        required: [true, "معرف الطالب مطلوب"],
       },
     ],
+    members: [
+      {
+        type: mongoose.Schema.ObjectId,
+        ref: "Users",
+      },
+    ],
+    pendingRequests: [
+      {
+        type: mongoose.Schema.ObjectId,
+        ref: "Users",
+      },
+    ],
+    inviteCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    messageExpiration: {
+      type: Number,
+      enum: [0, 7, 14, 30], // 0 means never
+      default: 0,
+    },
+    isPrivate: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );
@@ -34,6 +59,7 @@ createGroup.pre(/^find/, function (next) {
       select: "name",
     },
     { path: "grade", select: "name" },
+    { path: "pendingRequests", select: "name phone" },
   ]);
   next();
 });

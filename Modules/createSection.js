@@ -21,7 +21,7 @@ const createSection = new mongoose.Schema(
       type: String,
     },
     teacher: {
-      type: mongoose.Schema.ObjectId,
+      type: mongoose.Schema.ObjectId,  
       ref: "Teachers",
       required: [true, "معرف المدرس مطلوب"],
     },

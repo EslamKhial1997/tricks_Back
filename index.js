@@ -41,6 +41,8 @@ const RoutesTransfer = require("./Routes/RoutesTransfer");
 const createMessageModel = require("./Modules/createMessage");
 const createGroupModel = require("./Modules/createGroup");
 const createUsersModel = require("./Modules/createUsers");
+const createTeachersModel = require("./Modules/createTeacher");
+const { startCleanupTask } = require("./Service/CleanupService");
 
 dotenv.config({ path: "config.env" });
 const app = express();
@@ -130,90 +132,147 @@ app.get("*", (req, res, next) => {
   next();
 });
 app.use(globalError);
+startCleanupTask();
 io.use(async (socket, next) => {
-  let token = socket.handshake.headers.authorization?.split(" ")[1];
+  let token = socket.handshake.query?.token || socket.handshake.headers.authorization;
+
+  if (token && token.startsWith("Bearer ")) {
+    token = token.split(" ")[1];
+  }
 
   if (!token) {
+    console.log("❌ Socket Auth: No token provided");
     return next(new Error("توكن المستخدم مطلوب"));
   }
 
   try {
-    // التحقق من توكن المستخدم
-    const decoded = jwt.verify(token, process.env.DB_URL);
-    const user = await createUsersModel.findById(decoded.userId);
+    const secret = process.env.DB_URL;
+    if (!secret) {
+        console.error("❌ CRITICAL: process.env.DB_URL is undefined!");
+    }
+
+    console.log(`🔓 Attempting socket auth with token starting with: ${token.substring(0, 10)}...`);
+    
+    const decoded = jwt.verify(token, secret);
+    console.log("✅ Token verified for user ID:", decoded.userId);
+    
+    const user = (await createUsersModel.findById(decoded.userId)) || (await createTeachersModel.findById(decoded.userId));
 
     if (!user) {
+      console.log("❌ Socket Auth: User/Teacher not found in DB for ID:", decoded.userId);
       return next(new Error("المستخدم غير موجود"));
     }
 
-    const group = await createGroupModel.findOne({ token: user.groupToken });
-
-    if (!group) {
-      return next(new Error("الجروب غير موجود"));
-    }
-
-    // منع الطلاب المحظورين من الانضمام
-    if (group.bannedUsers.includes(user._id.toString())) {
-      return next(new Error("تم حظرك من هذا الجروب"));
-    }
-
+    console.log(`👤 Socket Auth Success: ${user.name} (${user.role})`);
     socket.user = decoded;
-    socket.group = group;
+    socket.dbUser = user;
     next();
   } catch (err) {
+    console.error("❌ Socket Auth JWT Error:", err.message);
     return next(new Error("توكن غير صالح"));
   }
 });
 
 io.on("connection", (socket) => {
-  console.log(`🔗 user Connection ${socket.user.userId}`);
+  console.log(`🔗 user Connected: ${socket.user.userId} (${socket.dbUser.role})`);
 
-  // 📌 حدث إرسال رسالة
-  socket.on("msg", async (message) => {
+  // Join a specific group
+  socket.on("joinGroup", async ({ groupId }) => {
     try {
-      console.log("📩 استقبال رسالة:", message);
-
-      // استخراج النص من داخل كائن الحدث
-      const messageText =
-        message.text || message.event === "msg" ? message.text : null;
-
-      if (!messageText || !messageText.trim()) {
-        console.log("⚠️ الرسالة فارغة!");
-        return;
+      console.log(`📡 Join Request: User ${socket.user.userId} -> Group ${groupId}`);
+      
+      const group = await createGroupModel.findById(groupId);
+      if (!group) {
+        console.log(`❌ Join Error: Group ${groupId} not found`);
+        return socket.emit("error", "الجروب غير موجود");
       }
 
-      // حفظ الرسالة في قاعدة البيانات
-      const newMessage = new createMessageModel({
-        groupId: message.groupId || "global",
-        senderId: socket.user.userId,
-        senderName: socket.user.userName || "مستخدم مجهول",
-        text: messageText,
+      const userId = socket.user.userId.toString();
+      
+      // Handle populated teacher object or raw ID
+      const teacherObj = group.teacher?._id || group.teacher;
+      if (!teacherObj) {
+        console.log(`❌ Join Error: Group has no teacher assigned`);
+        return socket.emit("error", "خطأ في بيانات الجروب (لا يوجد مدرس)");
+      }
+
+      const teacherId = teacherObj.toString();
+      const isTeacher = teacherId === userId;
+      
+      const isMember = group.members && group.members.some(m => {
+        const mid = (m && m._id) ? m._id.toString() : (m ? m.toString() : null);
+        return mid === userId;
       });
 
-      await newMessage.save();
+      const isBanned = group.bannedUsers && group.bannedUsers.some(b => {
+        const bid = (b && b._id) ? b._id.toString() : (b ? b.toString() : null);
+        return bid === userId;
+      });
 
-      console.log("✅ تم حفظ الرسالة:", newMessage);
-      io.emit("receiveMessage", newMessage);
+      console.log(`🔍 Permissions: User ${userId} | isTeacher=${isTeacher}, isMember=${isMember}, isBanned=${isBanned}`);
+
+      if (isBanned && !isTeacher) {
+        console.log(`❌ Join Error: User ${userId} is banned`);
+        return socket.emit("error", "تم حظرك من هذا الجروب");
+      }
+      
+      if (!isTeacher && !isMember) {
+        console.log(`❌ Join Error: User ${userId} is not a member`);
+        return socket.emit("error", "يجب عليك الانضمام للجروب أولاً");
+      }
+
+      socket.join(groupId);
+      console.log(`✅ Success: User ${userId} joined room ${groupId}`);
+      
+      // Load last messages
+      const messages = await createMessageModel.find({ groupId }).sort({ createdAt: -1 }).limit(50);
+      socket.emit("previousMessages", messages.reverse());
     } catch (error) {
-      console.log("❌ خطأ أثناء حفظ الرسالة:", error.message);
-      socket.emit("error", { status: "error", message: error.message });
+      console.error("🔥 Join Group Crash:", error);
+      socket.emit("error", `حدث خطأ أثناء الانضمام للجروب: ${error.message}`);
     }
   });
 
-  // 📌 حدث حظر المستخدم
-  socket.on("banUser", async ({ userId }) => {
-    console.log(`🚫 طلب حظر المستخدم: ${userId}`);
+  // Handle sending messages
+  socket.on("sendMessage", async ({ groupId, text }) => {
+    try {
+      if (!text || !text.trim()) return;
 
-    if (!userId) return socket.emit("error", "❌ معرف المستخدم مطلوب");
+      const group = await createGroupModel.findById(groupId);
+      if (!group) return;
 
-    io.emit("userBanned", userId);
+      const userId = socket.user.userId.toString();
+      const teacherObj = group.teacher?._id || group.teacher;
+      const isTeacher = teacherObj && teacherObj.toString() === userId;
+      const isMember = group.members && group.members.some(m => {
+          const mid = (m && m._id) ? m._id.toString() : (m ? m.toString() : null);
+          return mid === userId;
+      });
+
+      if (!isTeacher && !isMember) {
+          console.log(`❌ Send Message Error: User ${userId} lacks permissions for group ${groupId}`);
+          return socket.emit("error", "غير مسموح لك بإرسال رسائل في هذا الجروب");
+      }
+
+      const newMessage = new createMessageModel({
+        groupId,
+        senderId: socket.user.userId,
+        senderName: socket.dbUser.name || socket.user.userName,
+        text,
+      });
+
+      await newMessage.save();
+      io.to(groupId).emit("receiveMessage", newMessage);
+    } catch (error) {
+      console.error("🔥 Send Message Crash:", error);
+      socket.emit("error", `حدث خطأ أثناء إرسال الرسالة: ${error.message}`);
+    }
   });
 
-  // 📌 عند قطع الاتصال
   socket.on("disconnect", () => {
-    console.log(`❌ المستخدم ${socket.user.userId} غادر`);
+    console.log(`❌ User ${socket.user.userId} disconnected`);
   });
-}); 
+});
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
