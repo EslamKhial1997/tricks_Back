@@ -25,7 +25,10 @@ const createCoupons = new mongoose.Schema(
     lecture: {
       type: mongoose.Schema.ObjectId,
       ref: "Lectures",
-      required: [true, "Lectures ID Is Required"],
+    },
+    section: {
+        type: mongoose.Schema.ObjectId,
+        ref: "Section",
     },
 
     locked: {
@@ -40,6 +43,7 @@ const createCoupons = new mongoose.Schema(
 createCoupons.pre(/^find/, function (next) {
   this.populate([
     { path: "lecture", select: "lecture price description" },
+    { path: "section", select: "name price image" },
     { path: "teacher", select: "name" },
   ]);
   next();
@@ -48,6 +52,7 @@ createCoupons.pre(/^find/, function (next) {
 createCoupons.post("save", async function (doc, next) {
   await doc.populate([
     { path: "lecture", select: "lecture price description" },
+    { path: "section", select: "name price image" },
     { path: "teacher", select: "name" },
   ]);
   next();

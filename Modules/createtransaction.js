@@ -15,11 +15,14 @@ const createTransaction = new mongoose.Schema(
     lecture: {
       type: mongoose.Schema.ObjectId,
       ref: "Lectures",
-      require: [true, "معرف المحاضرة مطلوب"],
+    },
+    section: {
+        type: mongoose.Schema.ObjectId,
+        ref: "Section",
     },
     type: {
       type: String,
-      enum: ["lecture", "section" , "qrcode" , "youtube"],
+      enum: ["lecture", "section", "qrcode", "youtube"],
       default: "lecture",
     },
     point: Number,
@@ -38,7 +41,12 @@ createTransaction.pre(/^find/, function (next) {
   this.populate({
     path: "lecture",
     select: "-bunny -section -video -description -pdf",
-  }).populate({ path: "user", select: "name phone , email" });
+  })
+  .populate({
+      path: "section",
+      select: "name image"
+  })
+  .populate({ path: "user", select: "name phone , email" });
   next();
 });
 

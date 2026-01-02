@@ -60,15 +60,30 @@ createCouresSchema.pre(/^find/, function (next) {
   this.populate([
     {
       path: "couresItems.lacture",
+      populate: [
+        {
+          path: "section",
+          populate: { path: "class", select: "name" }
+        },
+        { path: "teacher", select: "name" }
+      ]
     },
-
     { path: "teacher", select: "name" },
   ]);
   next();
 });
 createCouresSchema.post("save", async function (doc, next) {
   await doc.populate([
-    { path: "couresItems.lacture" },
+    {
+      path: "couresItems.lacture",
+      populate: [
+        {
+          path: "section",
+          populate: { path: "class", select: "name" }
+        },
+        { path: "teacher", select: "name" }
+      ]
+    },
     { path: "teacher", select: "name" },
   ]);
   next();

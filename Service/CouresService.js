@@ -9,23 +9,69 @@ const createTransactionModel = require("../Modules/createtransaction");
 
 exports.createCoures = expressAsyncHandler(async (req, res, next) => {
   try {
-    const lactureModel = await createLecturesModel.findById(req.body.lacture);
+    let price = 0;
+    let priceAfterDiscount = 0;
+    let dataToBuy = null;
+    let lecturesList = [];
 
-    const couponModel = req.couponModel;
-    const price = couponModel ? couponModel.lecture.price : lactureModel.price;
-    const priceAfterDiscount = couponModel
-      ? (price - (price * couponModel.discount) / 100).toFixed(0)
-      : price;
+    // 1️⃣ Check if the user is buying a Section or a Lecture
+    if (req.body.section) {
+      // --- Buying a Whole Section ---
+      const createSectionModel = require("../Modules/createSection"); // Adjust path if needed
+      const sectionModel = await createSectionModel.findById(req.body.section);
 
+      if (!sectionModel) {
+        return next(new ApiError("القسم غير موجود", 404));
+      }
+
+      dataToBuy = sectionModel;
+
+      // Find all lectures in this section
+      lecturesList = await createLecturesModel.find({
+        section: req.body.section,
+      });
+
+      if (lecturesList.length === 0) {
+        return next(new ApiError("هذا القسم لا يحتوي على محاضرات بعد", 404));
+      }
+
+      const couponModel = req.couponModel;
+      price = couponModel ? (couponModel.section ? couponModel.section.price : sectionModel.price) : sectionModel.price;
+
+      priceAfterDiscount = couponModel
+        ? (price - (price * couponModel.discount) / 100).toFixed(0)
+        : price;
+
+    } else if (req.body.lacture) {
+      // --- Buying a Single Lecture (Original Logic) ---
+      const lactureModel = await createLecturesModel.findById(req.body.lacture);
+      if (!lactureModel) {
+        return next(new ApiError("المحاضرة غير موجودة", 404));
+      }
+      dataToBuy = lactureModel;
+      lecturesList = [lactureModel]; // Just one lecture
+
+      const couponModel = req.couponModel;
+      price = couponModel ? couponModel.lecture.price : lactureModel.price;
+      
+      priceAfterDiscount = couponModel
+        ? (price - (price * couponModel.discount) / 100).toFixed(0)
+        : price;
+    } else {
+      return next(new ApiError("يجب تحديد محاضرة أو قسم للشراء", 400));
+    }
+
+    // 2️⃣ Check User Points
     if (req.user.point < priceAfterDiscount) {
       return next(
         new ApiError(
-          `سعر المحاضره ${price} اكبر من رصيدك ${req.user.point}`,
+          `سعر ${req.body.section ? "القسم" : "المحاضرة"} ${priceAfterDiscount} اكبر من رصيدك ${req.user.point}`,
           500
         )
       );
     }
 
+    // 3️⃣ Get or Create User's Course Record
     let coures = await createCouresModel.findOne({ user: req.user._id });
     if (!coures) {
       coures = await createCouresModel.create({
@@ -35,70 +81,87 @@ exports.createCoures = expressAsyncHandler(async (req, res, next) => {
       });
     }
 
-    const teacherId = lactureModel.teacher._id.toString();
+    // 4️⃣ Add Teachers to Course Record
+    // Collect all unique teachers from the list of lectures we are buying
+    lecturesList.forEach((lectureItem) => {
+       const teacherId = lectureItem.teacher._id.toString();
+       const teacherExists = coures.teacher.some(
+         (teacher) => teacher.teacherID.toString() === teacherId
+       );
+       if (!teacherExists) {
+         coures.teacher.push({
+           name: lectureItem.teacher.name,
+           teacherID: lectureItem.teacher._id,
+         });
+       }
+    });
 
-    const teacherExists = coures.teacher.some(
-      (teacher) => teacher.teacherID.toString() === teacherId
-    );
-    if (!teacherExists) {
-      coures.teacher.push({
-        name: lactureModel.teacher.name,
-        teacherID: lactureModel.teacher._id,
-      });
-    }
-    if (lactureModel) {
+    // 5️⃣ Add Lectures to User's Course items
+    let itemsAddedCount = 0;
+    const couponModel = req.couponModel; // Re-assign for scope access if needed
+
+    for (const lectureItem of lecturesList) {
       const lectureExistsIndex = coures.couresItems.findIndex(
-        (item) => item.lacture._id.toString() === lactureModel._id.toString()
+        (item) => item.lacture._id.toString() === lectureItem._id.toString()
       );
 
       if (lectureExistsIndex === -1) {
-        coures.couresItems.push({
-          lacture: lactureModel._id,
-          teacherID: lactureModel.teacher._id,
-          coupon: couponModel ? couponModel.code : null,
-          expires: couponModel
-            ? couponModel.expires
-            : new Date(new Date().getTime() + 300 * 24 * 60 * 60 * 1000),
-          discount: couponModel ? couponModel.discount : null,
-        });
-      } else {
-        return res.status(404).json({
-          status: "Failure",
-          msg: "المحاضره موجوده من قبل",
-        });
+         coures.couresItems.push({
+           lacture: lectureItem._id,
+           teacherID: lectureItem.teacher._id,
+           coupon: couponModel ? couponModel.code : null,
+           expires: couponModel
+             ? couponModel.expires
+             : new Date(new Date().getTime() + 300 * 24 * 60 * 60 * 1000), // Default 300 days
+           discount: couponModel ? couponModel.discount : null,
+         });
+         itemsAddedCount++;
       }
-      await coures.save();
     }
 
-    const totalPriceAfterDiscount = couponModel
-      ? (price - (price * couponModel.discount) / 100).toFixed(0)
-      : price;
+    if (itemsAddedCount === 0) {
+      return res.status(400).json({
+        status: "Failure",
+        msg: req.body.section ? "أنت تمتلك جميع محاضرات هذا القسم بالفعل" : "المحاضرة موجودة من قبل",
+      });
+    }
 
+    await coures.save();
+
+    // 6️⃣ Deduct Points & Create Transaction
+    const finalPrice = Number(priceAfterDiscount);
+    
     const user = await createUsersModel.findByIdAndUpdate(
       req.user._id,
-      { point: req.user.point - totalPriceAfterDiscount },
+      { $inc: { point: -finalPrice } },
       { new: true }
     );
-    await createTransactionModel.create({
-      user: req.user._id,
-      teacher: lactureModel.teacher._id,
-      point: totalPriceAfterDiscount,
-      lecture: lactureModel._id,
-      type: "lecture",
+    console.log("👤 User points after update:", user?.point);
 
+    const transactionData = {
+      user: req.user._id,
+      teacher: dataToBuy.teacher._id || (lecturesList[0] && lecturesList[0].teacher._id),
+      point: finalPrice,
+      type: req.body.section ? "section" : "lecture",
       coupon: {
         code: couponModel?.code,
         expires: couponModel?.expires,
         discount: couponModel?.discount,
         createdBy: couponModel?.createdBy,
       },
-    });
+    };
+
+    if (req.body.section) {
+        transactionData.section = dataToBuy._id;
+    } else {
+        transactionData.lecture = dataToBuy._id;
+    }
+
+    await createTransactionModel.create(transactionData);
 
     if (couponModel) {
       await createCouponsModel.findByIdAndDelete(couponModel._id);
     }
-
-    await user.save();
 
     res.status(200).json({
       data: {
